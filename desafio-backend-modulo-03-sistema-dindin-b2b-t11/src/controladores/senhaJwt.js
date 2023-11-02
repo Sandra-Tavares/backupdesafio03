@@ -1,2 +1,2 @@
-module.export = 'Chocolate'
+module.exports = 'Chocolate'
 

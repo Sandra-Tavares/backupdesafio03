@@ -36,7 +36,7 @@ const loginUsuario = async (req, res) => {
 
         const usuario = await pool.query('select * from usuarios where email = $1', [email])
 
-        if (rowCount === 0) {
+        if (usuario.rowCount === 0) {
             return res.status(400).json({ mensagem: 'Email ou senha inválida' })
         }
         const senhaValida = await bcrypt.compare(senha, usuario.rows[0].senha)
@@ -51,18 +51,34 @@ const loginUsuario = async (req, res) => {
 
         return res.status(201).json({ usuario: usuarioLogado, token })
 
-
-
     } catch (error) {
-        console.log(error)
         return res.status(404).json({ mensagem: 'Erro interno do Servidor' })
     }
 }
 
+const detalharPerfilUsuarioLogado = async (req, res) => {
+    // const { id } = req.params
 
+    try {
+        const { rows, rowCount } = await pool.query(
+            'select id, nome, email from usuarios where id = $1', [id])
+
+        if (rowCount === 0) {
+            return res.status(404).json({ mensagem: 'Usuario não existe' })
+        }
+        const usuario = rows[0]
+
+        return res.json(usuario)
+    } catch (error) {
+        return res.status(500).json({ mensagem: 'Erro interno do servidor' })
+
+    }
+}
 
 
 module.exports = {
     cadastrarUsuario,
-    loginUsuario
+    loginUsuario,
+    detalharPerfilUsuarioLogado,
+
 }
