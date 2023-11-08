@@ -1,13 +1,12 @@
 const pool = require('../conexao')
 const bcrypt = require('bcrypt')
 
-
 const cadastrarUsuario = async (req, res) => {
     const { nome, email, senha } = req.body
 
     try {
         if (!nome || !email || !senha) {
-            return res.send({ mensagem: 'Todos os dados devem ser preenchidos' })
+            return res.status(404).json({ mensagem: 'Todos os dados devem ser preenchidos' })
         }
         const emailExiste = await pool.query('select * from usuarios where email = $1', [email])
 
@@ -20,10 +19,11 @@ const cadastrarUsuario = async (req, res) => {
         const { rows } = await pool.query(query, [nome, email, senhaCriptografada])
 
         const { senha: _, ...usuario } = rows[0]
+
         return res.status(201).json(usuario)
 
     } catch (error) {
-        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
@@ -34,7 +34,7 @@ const detalharPerfilUsuarioLogado = async (req, res) => {
         return res.status(200).json(usuario)
 
     } catch (error) {
-        return res.status(401).json({ mensagem: 'Erro interno do servidor-perfil' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
@@ -61,7 +61,7 @@ const atualizarUsuario = async (req, res) => {
         return res.status(204).send()
 
     } catch (error) {
-        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
@@ -71,31 +71,32 @@ const listarCategorias = async (req, res) => {
         const { rows } = categorias
         return res.status(200).json(rows)
     } catch {
-        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
 const listarTrancacoesDoUsuarioLogado = async (req, res) => {
+    const { id } = req.params
     const { filtro } = req.query
     let transacoesFiltradas = []
     try {
+
+        const { rows } = await pool.query(`select t.id as transacaoId, t.tipo, t.descricao, t.valor, t.data, t.usuario_id, t.categoria_id, 
+        c.descricao as categoria_nome from transacoes t left join categorias c on t.categoria_id = c.id where t.usuario_id = $1`, [req.usuario.id])
+
         if (filtro) {
             for (categoria of filtro) {
-                const { rows } = await pool.query('select * from categorias where descricao = $1', [categoria])
-                const { rows: transacoes } = await pool.query('select * from transacoes where usuario_id = $1 and categoria_id = $2', [req.usuario.id, rows[0].id])
-                transacoesFiltradas.push(...transacoes)
+                let filter = rows.filter((transacao) => {
+                    return transacao.categoria_nome.toLowerCase() === categoria.toLowerCase()
+                })
+                transacoesFiltradas.push(...filter)
             }
-        } else {
-            const { rows } = await pool.query('select * from transacoes where usuario_id = $1', [req.usuario.id])
-            transacoesFiltradas.push(rows)
         }
-        return res.status(200).json(transacoesFiltradas)
+        return res.json(filtro ? transacoesFiltradas : rows)
 
     } catch (error) {
-        console.log(error)
-        return res.status(500).json({ mensagem: 'Erro interno do Servidor-listar' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
-
 }
 
 const detalharTrancacaoDoUsuarioLogado = async (req, res) => {
@@ -110,12 +111,13 @@ const detalharTrancacaoDoUsuarioLogado = async (req, res) => {
         return res.status(200).json(transacoes.rows)
 
     } catch (error) {
-        return res.status(401).json({ mensagem: 'Erro interno do servidor-detalhar' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
 const cadastrarTransacaoDoUsuarioLogado = async (req, res) => {
     const { descricao, valor, data, categoria_id, tipo } = req.body
+
     try {
         if (!descricao || !valor || !data || !categoria_id || !tipo) {
             return res.send({ mensagem: 'Todos os dados devem ser preenchidos' })
@@ -123,7 +125,7 @@ const cadastrarTransacaoDoUsuarioLogado = async (req, res) => {
         const categoriaExiste = await pool.query('select * from categorias where id = $1', [categoria_id])
 
         if (!categoriaExiste) {
-            return res.status(404).json({ mensagem: 'categoria não cadastrada' })
+            return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
         }
 
         if (tipo != 'entrada' && tipo != 'saida') {
@@ -136,9 +138,8 @@ const cadastrarTransacaoDoUsuarioLogado = async (req, res) => {
 
     } catch (error) {
 
-        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
-
 }
 
 const atualizarTransacaoDoUsuarioLogado = async (req, res) => {
@@ -171,7 +172,7 @@ const atualizarTransacaoDoUsuarioLogado = async (req, res) => {
         return res.status(200).json('Atualização efetivada com sucesso')
 
     } catch (error) {
-        return res.status(401).json({ mensagem: 'Erro interno do - Atualizar' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
@@ -192,7 +193,7 @@ const excluirTransacaoDoUsuarioLogado = async (req, res) => {
         return res.status(204).json('Transação excluída')
 
     } catch (error) {
-        return res.status(401).json({ mensagem: 'Erro interno do servidor-Excluir' })
+        return res.status(404).json({ mensagem: 'O servidor não pode encontrar o recurso solicitado' })
     }
 }
 
@@ -216,10 +217,9 @@ const obterExtratoDeTransacoes = async (req, res) => {
         return res.status(201).json({ 'Entrada': entrada, 'Saida': saida })
 
     } catch (error) {
-        return res.status(401).json("Erro interno do servidor")
+        return res.status(404).json('O servidor não pode encontrar o recurso solicitado')
     }
 }
-
 
 module.exports = {
     cadastrarUsuario,
@@ -232,6 +232,4 @@ module.exports = {
     atualizarTransacaoDoUsuarioLogado,
     excluirTransacaoDoUsuarioLogado,
     obterExtratoDeTransacoes,
-
-
 }
