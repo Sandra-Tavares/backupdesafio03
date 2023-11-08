@@ -1,7 +1,5 @@
 const pool = require('../conexao')
 const bcrypt = require('bcrypt')
-const jwt = require('jsonwebtoken')
-const senhaJwt = require('./senhaJwt')
 
 
 const cadastrarUsuario = async (req, res) => {
@@ -29,65 +27,211 @@ const cadastrarUsuario = async (req, res) => {
     }
 }
 
-
 const detalharPerfilUsuarioLogado = async (req, res) => {
-    const { id } = req.headers
+    const { senha: _, ...usuario } = req.usuario
 
     try {
-        const { rows, rowCount } = await pool.query(
-            'select id, nome, email from usuarios where id = $1', [id])
+        return res.status(200).json(usuario)
 
-        if (rowCount === 0) {
-            return res.status(404).json({ mensagem: 'Usuario não existe' })
-        }
-        const usuario = rows[0]
-
-        return res.json(usuario)
     } catch (error) {
-        return res.status(500).json({ mensagem: 'Erro interno do servidor' })
-
+        return res.status(401).json({ mensagem: 'Erro interno do servidor-perfil' })
     }
 }
 
 const atualizarUsuario = async (req, res) => {
-    const { id } = req.headers
+    const { id } = req.usuario
+
     const { nome, email, senha } = req.body
 
     try {
-        // if (!nome || !email || !senha) {
-        //     res.status(400).json({ mensagem: 'Todos os campos devem ser preenchidos' })
-        // }
-        // const usuario = await pool.query('select * from usuarios where id = $1', [id])
-        const usuario = await pool.query('select * from usuarios where id = $1', [id])
-
-        if (usuario.rowCount === 0) {
-            return res.status(404).json({ mensagem: 'Usuario não existe' })
+        if (!nome || !email || !senha) {
+            return res.status(400).json({ mensagem: 'Todos os campos devem ser preenchidos' })
         }
-        // if (usuario.email != email) {
-        //     return res.status(400).json({ mensagem: 'Email já sendo utilizado por outro usuario' })
-        // }
+        const usuario = await pool.query('select * from usuarios where email = $1', [email])
 
+        if (usuario.rowCount > 0) {
+            return res.status(400).json({ mensagem: 'Email já sendo utilizado por outro usuario' })
+        }
         const senhaCriptografada = await bcrypt.hash(senha, 10)
 
-        const queryAtaulizarUsuario = 'update usuarios set nome = $1, where id = $2'
+        const queryAtaulizarUsuario = 'update usuarios set nome = $1, email = $2, senha = $3 where id = $4'
 
-        await pool.query(queryAtaulizarUsuario, [nome, email, senhaCriptografada])
+        await pool.query(queryAtaulizarUsuario, [nome, email, senhaCriptografada, id])
 
-        return res.status(201).send()
-
+        return res.status(204).send()
 
     } catch (error) {
         return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
     }
+}
 
+const listarCategorias = async (req, res) => {
+    try {
+        const categorias = await pool.query('select * from categorias')
+        const { rows } = categorias
+        return res.status(200).json(rows)
+    } catch {
+        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+    }
+}
 
+const listarTrancacoesDoUsuarioLogado = async (req, res) => {
+    const { filtro } = req.query
+    let transacoesFiltradas = []
+    try {
+        if (filtro) {
+            for (categoria of filtro) {
+                const { rows } = await pool.query('select * from categorias where descricao = $1', [categoria])
+                const { rows: transacoes } = await pool.query('select * from transacoes where usuario_id = $1 and categoria_id = $2', [req.usuario.id, rows[0].id])
+                transacoesFiltradas.push(...transacoes)
+            }
+        } else {
+            const { rows } = await pool.query('select * from transacoes where usuario_id = $1', [req.usuario.id])
+            transacoesFiltradas.push(rows)
+        }
+        return res.status(200).json(transacoesFiltradas)
 
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ mensagem: 'Erro interno do Servidor-listar' })
+    }
+
+}
+
+const detalharTrancacaoDoUsuarioLogado = async (req, res) => {
+    const { id } = req.params
+
+    try {
+        const transacoes = await pool.query('select * from transacoes where usuario_id = $1 and id = $2', [req.usuario.id, id])
+
+        if (!transacoes) {
+            return res.status(404).json("Não encontrado transçoes para o usuario informado")
+        }
+        return res.status(200).json(transacoes.rows)
+
+    } catch (error) {
+        return res.status(401).json({ mensagem: 'Erro interno do servidor-detalhar' })
+    }
+}
+
+const cadastrarTransacaoDoUsuarioLogado = async (req, res) => {
+    const { descricao, valor, data, categoria_id, tipo } = req.body
+    try {
+        if (!descricao || !valor || !data || !categoria_id || !tipo) {
+            return res.send({ mensagem: 'Todos os dados devem ser preenchidos' })
+        }
+        const categoriaExiste = await pool.query('select * from categorias where id = $1', [categoria_id])
+
+        if (!categoriaExiste) {
+            return res.status(404).json({ mensagem: 'categoria não cadastrada' })
+        }
+
+        if (tipo != 'entrada' && tipo != 'saida') {
+            return res.status(404).json('Informar tipo correto')
+        }
+        const query = 'insert into transacoes (tipo, descricao, valor, data, categoria_id, usuario_id) values ($1, $2, $3, $4, $5, $6)'
+        const { rows } = await pool.query(query, [tipo, descricao, valor, data, categoria_id, req.usuario.id])
+        const resultado = { tipo, descricao, valor, data, categoria_id, usuario_id: req.usuario.id }
+        return res.status(201).json(resultado)
+
+    } catch (error) {
+
+        return res.status(500).json({ mensagem: 'Erro interno do Servidor' })
+    }
+
+}
+
+const atualizarTransacaoDoUsuarioLogado = async (req, res) => {
+    const { id } = req.params
+    const { descricao, valor, data, categoria_id, tipo } = req.body
+
+    try {
+        if (!descricao || !valor || !data || !categoria_id || !tipo) {
+            return res.send({ mensagem: 'Todos os dados devem ser preenchidos' })
+        }
+        const categoriaExiste = await pool.query('select * from categorias where id = $1', [categoria_id])
+
+        if (!categoriaExiste) {
+            return res.status(404).json({ mensagem: 'categoria não cadastrada' })
+        }
+
+        if (tipo != 'entrada' && tipo != 'saida') {
+            return res.status(404).json('Informar tipo correto')
+        }
+        const transacoes = await pool.query('select * from transacoes where usuario_id = $1 and id = $2', [req.usuario.id, id])
+
+        if (!transacoes) {
+            return res.status(404).json("Não encontrado transações para o usuario informado")
+        }
+
+        const queryAtaulizarTransacao = 'update transacoes set descricao = $1, valor = $2, data = $3, categoria_id = $4, tipo = $5 where id = $6'
+
+        await pool.query(queryAtaulizarTransacao, [descricao, valor, data, categoria_id, tipo, id])
+
+        return res.status(200).json('Atualização efetivada com sucesso')
+
+    } catch (error) {
+        return res.status(401).json({ mensagem: 'Erro interno do - Atualizar' })
+    }
+}
+
+const excluirTransacaoDoUsuarioLogado = async (req, res) => {
+    const { id } = req.params
+
+    try {
+        const transacoes = await pool.query('select descricao, valor, data, categoria_id, tipo from transacoes where id = $1 and usuario_id = $2',
+            [req.usuario.id, id])
+
+        if (!transacoes) {
+            return res.status(404).json("Não encontrado transações para o usuario informado")
+        }
+        const queryApagarTransacao = 'delete from transacoes where id = $1'
+
+        await pool.query(queryApagarTransacao, [id])
+
+        return res.status(204).json('Transação excluída')
+
+    } catch (error) {
+        return res.status(401).json({ mensagem: 'Erro interno do servidor-Excluir' })
+    }
+}
+
+const obterExtratoDeTransacoes = async (req, res) => {
+    try {
+        const transacoes = await pool.query('select descricao, valor, data, categoria_id, tipo from transacoes where usuario_id = $1',
+            [req.usuario.id])
+
+        if (!transacoes) {
+            return res.status(404).json("Não encontrado transações para o usuario informado")
+        }
+        let entrada = 0;
+        let saida = 0
+        for (let transacao of transacoes.rows) {
+            if (transacao.tipo === "saida") {
+                saida = saida + transacao.valor
+            } else {
+                entrada = entrada + transacao.valor
+            }
+        }
+        return res.status(201).json({ 'Entrada': entrada, 'Saida': saida })
+
+    } catch (error) {
+        return res.status(401).json("Erro interno do servidor")
+    }
 }
 
 
 module.exports = {
     cadastrarUsuario,
     detalharPerfilUsuarioLogado,
-    atualizarUsuario
+    atualizarUsuario,
+    listarCategorias,
+    listarTrancacoesDoUsuarioLogado,
+    detalharTrancacaoDoUsuarioLogado,
+    cadastrarTransacaoDoUsuarioLogado,
+    atualizarTransacaoDoUsuarioLogado,
+    excluirTransacaoDoUsuarioLogado,
+    obterExtratoDeTransacoes,
+
 
 }

@@ -19,7 +19,7 @@ const loginUsuario = async (req, res) => {
             return res.status(400).json({ mensagem: 'Email ou senha inválida' })
         }
 
-        const token = jwt.sign({ id: usuario.rows[0].id }, senhaJwt, { expiresIn: '12h', })
+        const token = jwt.sign({ id: usuario.rows[0].id }, senhaJwt, { expiresIn: '12h' })
 
         const { senha: _, ...usuarioLogado } = usuario.rows[0]
 
